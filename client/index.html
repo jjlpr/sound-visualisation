@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<html>
+  <head>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="container"></div>
+    <script src="http://cdn.date-fns.org/v1.9.0/date_fns.min.js"></script>
+    <script>
+      (function(window, document) {
+        var ww = window.innerWidth;
+        var wh = window.innerHeight;
+
+        var cwh = ww > wh ? wh : ww;
+        var swh = cwh/60;
+        var rad = Math.floor(swh/2);
+
+        var canvas = document
+          .createElement('canvas');
+        canvas.width = cwh;
+        canvas.height = cwh;
+
+        var context = canvas.getContext('2d');
+
+        document
+          .getElementById('container')
+          .appendChild(canvas);
+
+        var addSecond = function addSecond(i, scale) {
+          var x = swh*(Math.floor(i/60)) + rad;
+          var y = swh*(i%60) + rad;
+
+          var c0 = Math.round(255*i/3600);
+          var c1 = Math.round(255*(3600-i)/3600);
+          var cs = [c0, c1, c0]
+
+          context.beginPath();
+          context.arc(x, y, rad*scale, 0, 2*Math.PI);
+          context.fillStyle = 'rgba(' + cs[0] + ', ' + cs[1] + ', ' + cs[2] + ', 1)';
+          context.fill();
+        };
+
+        var maxToScale = function maxToScale(max) {
+          return max;
+        }
+
+        // we'll want to  calculate the offset here
+        var addSeconds = function addSeconds(data, offset, normaliseMax) {
+          var i = 0, l = data.length;
+          for(i; i<l; i++) {
+            var normalisedMax = normaliseMax(data[i].max);
+            var scaledMax = maxToScale(normalisedMax);
+            addSecond(offset + i, scaledMax);
+          }
+        }
+
+        var getNormaliseMax = function getNormaliseMax(max) {
+          return function(m) {
+            return m/max;
+          }
+        }
+
+        var lastTimestamp;
+
+        var fetchData = function fetchData(start, end) {
+          return fetch('http://localhost:8080?start=' + start + '&end='+end, {
+            method: 'get'
+          })
+          .then(function (response) {
+            return response.json();
+          })
+          .then(function (responseJson) {
+            return responseJson;
+          });
+        }
+
+        var fetchInitialData = function fetchInitialData() {
+
+          var now = new Date();
+          var startOfHour = dateFns.startOfHour(now);
+
+          var start = dateFns.format(startOfHour, 'x');
+          var end = dateFns.format(now, 'x');
+
+          fetchData(start, end)
+            .then(function (responseJson) {
+              addSeconds(responseJson, 0, getNormaliseMax(100));
+              lastTimestamp = responseJson[responseJson.length - 1].timestamp;
+            });
+        }
+
+        var handleInterval = function handleInterval() {
+          var now = Date.now();
+          var startOfHour = dateFns.startOfHour(now);
+          var start = lastTimestamp;
+          var end = dateFns.format(now, 'x');
+
+          fetchData(start, end)
+            .then(function (responseJson) {
+              var lastTimestampDate = new Date(Number(lastTimestamp));
+              var offset = dateFns.differenceInSeconds(lastTimestampDate, startOfHour);
+              addSeconds(responseJson, offset, getNormaliseMax(100));
+
+              if(responseJson.length) {
+                lastTimestamp = responseJson[responseJson.length - 1].timestamp;
+              }
+            });
+        }
+
+        var startup = function startup() {
+          fetchInitialData();
+
+          setInterval(handleInterval, 1000);
+        }
+
+        startup();
+
+      })(window, document);
+    </script>
+  </body>
+</html>
